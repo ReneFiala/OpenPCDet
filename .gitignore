@@ -7,10 +7,12 @@ data/
 venv/
 *.idea/
 *.so
-*.sh
 *.pth
 *.pkl
 *.zip
 *.bin
 output
 version.py
+*.exe
+*.bat
+*.tar.gz
