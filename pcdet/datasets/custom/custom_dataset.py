@@ -138,11 +138,11 @@ class CustomDataset(DatasetTemplate):
             raise NotImplementedError
 
         return ap_result_str, ap_dict
-
+    
     def get_infos(self, class_names, num_workers=4, has_label=True, sample_id_list=None, num_features=4):
-        import concurrent.futures as futures
-
-        def process_single_scene(sample_idx):
+        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
+        infos = []
+        for sample_idx in sample_id_list:
             print('%s sample_idx: %s' % (self.split, sample_idx))
             info = {}
             pc_info = {'num_features': num_features, 'lidar_idx': sample_idx}
@@ -154,15 +154,8 @@ class CustomDataset(DatasetTemplate):
                 annotations['name'] = name
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar[:, :7]
                 info['annos'] = annotations
-
-            return info
-
-        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
-
-        # create a thread pool to improve the velocity
-        with futures.ThreadPoolExecutor(num_workers) as executor:
-            infos = executor.map(process_single_scene, sample_id_list)
-        return list(infos)
+            infos.append(info)
+        return infos
 
     def create_groundtruth_database(self, info_path=None, used_classes=None, split='train'):
         import torch
@@ -230,54 +223,49 @@ class CustomDataset(DatasetTemplate):
                 f.write(line)
 
 
-def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("cfg", type=str,
+                        help="Path to the dataset config YAML file.")
+    parser.add_argument("-d", type=str, default="custom",
+                        help="Name of the dataset folder under 'data/'. Default: '%(default)s'")
+    parser.add_argument("-c", type=str, nargs="+", default="Plant",
+                        help="Dataset class names. Default: '%(default)s'")
+    args = parser.parse_args()
+    
+    dataset_cfg = EasyDict(yaml.safe_load(open(args.cfg)))
+    ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
+    print(ROOT_DIR)
+    create_custom_infos(
+        dataset_cfg=dataset_cfg,
+        class_names=args.c if type(args.c) is list else [args.c],
+        data_path=ROOT_DIR / 'data' / args.d,
+        save_path=ROOT_DIR / 'data' / args.d,
+    )
+
+def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=1):
     dataset = CustomDataset(
         dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path,
         training=False, logger=common_utils.create_logger()
     )
-    train_split, val_split = 'train', 'val'
     num_features = len(dataset_cfg.POINT_FEATURE_ENCODING.src_feature_list)
-
-    train_filename = save_path / ('custom_infos_%s.pkl' % train_split)
-    val_filename = save_path / ('custom_infos_%s.pkl' % val_split)
-
-    print('------------------------Start to generate data infos------------------------')
-
-    dataset.set_split(train_split)
-    custom_infos_train = dataset.get_infos(
-        class_names, num_workers=workers, has_label=True, num_features=num_features
-    )
-    with open(train_filename, 'wb') as f:
-        pickle.dump(custom_infos_train, f)
-    print('Custom info train file is saved to %s' % train_filename)
-
-    dataset.set_split(val_split)
-    custom_infos_val = dataset.get_infos(
-        class_names, num_workers=workers, has_label=True, num_features=num_features
-    )
-    with open(val_filename, 'wb') as f:
-        pickle.dump(custom_infos_val, f)
-    print('Custom info train file is saved to %s' % val_filename)
-
-    print('------------------------Start create groundtruth database for data augmentation------------------------')
-    dataset.set_split(train_split)
-    dataset.create_groundtruth_database(train_filename, split=train_split)
-    print('------------------------Data preparation done------------------------')
-
-
-if __name__ == '__main__':
-    import sys
-
-    if sys.argv.__len__() > 1 and sys.argv[1] == 'create_custom_infos':
-        import yaml
-        from pathlib import Path
-        from easydict import EasyDict
-
-        dataset_cfg = EasyDict(yaml.safe_load(open(sys.argv[2])))
-        ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
-        create_custom_infos(
-            dataset_cfg=dataset_cfg,
-            class_names=['Vehicle', 'Pedestrian', 'Cyclist'],
-            data_path=ROOT_DIR / 'data' / 'custom',
-            save_path=ROOT_DIR / 'data' / 'custom',
+    splits = os.listdir(os.path.join(save_path, "ImageSets"))
+    for split_file in splits:
+        split_name = split_file[:-4]
+        split_filename = save_path / ('custom_infos_%s.pkl' % split_name)
+        dataset.set_split(split_name)
+        custom_infos = dataset.get_infos(
+            class_names, num_workers=workers, has_label=True, num_features=num_features
         )
+        with open(split_filename, 'wb+') as f:
+            pickle.dump(custom_infos, f)
+        if split_name.startswith("train"):
+            dataset.create_groundtruth_database(split_filename, split=split_name)
+
+
+if __name__ == "__main__":
+    import argparse, yaml
+    from pathlib import Path
+    from easydict import EasyDict
+    main()
+    
