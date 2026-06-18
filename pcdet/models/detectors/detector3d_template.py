@@ -358,12 +358,12 @@ class Detector3DTemplate(nn.Module):
             self.load_state_dict(state_dict)
         return state_dict, update_model_state
 
-    def load_params_from_file(self, filename, logger, to_cpu=False, pre_trained_path=None):
+    def load_params_from_file(self, filename, logger, map_location=None, pre_trained_path=None):
         if not os.path.isfile(filename):
             raise FileNotFoundError
 
-        logger.info('==> Loading parameters from checkpoint %s to %s' % (filename, 'CPU' if to_cpu else 'GPU'))
-        loc_type = torch.device('cpu') if to_cpu else None
+        logger.info('==> Loading parameters from checkpoint %s' % (filename))
+        loc_type = map_location
         checkpoint = torch.load(filename, map_location=loc_type)
         model_state_disk = checkpoint['model_state']
         if not pre_trained_path is None:
