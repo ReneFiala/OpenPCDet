@@ -57,7 +57,7 @@ class AnchorHeadSingle(AnchorHeadTemplate):
         else:
             dir_cls_preds = None
 
-        if self.training:
+        if self.training or True:
             targets_dict = self.assign_targets(
                 gt_boxes=data_dict['gt_boxes']
             )
