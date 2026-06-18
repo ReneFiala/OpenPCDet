@@ -323,11 +323,11 @@ class VoxelSetAbstraction(nn.Module):
                 xyz_batch_cnt[bs_idx] = (xyz_bs_idxs == bs_idx).sum()
 
         pooled_points, pooled_features = aggregate_func(
-            xyz=xyz.contiguous(),
+            xyz=xyz.contiguous() if xyz_features is not None else None,
             xyz_batch_cnt=xyz_batch_cnt,
             new_xyz=new_xyz,
             new_xyz_batch_cnt=new_xyz_batch_cnt,
-            features=xyz_features.contiguous(),
+            features=xyz_features.contiguous() if xyz_features is not None else None,
         )
         return pooled_features
 
