@@ -4,13 +4,16 @@ import os
 
 import numpy as np
 
-from ...ops.roiaware_pool3d import roiaware_pool3d_utils
-from ...utils import box_utils, common_utils
-from ..dataset import DatasetTemplate
+# from ...ops.roiaware_pool3d import roiaware_pool3d_utils
+# from ...utils import box_utils, common_utils
+# from ..dataset import DatasetTemplate
+from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
+from pcdet.utils import box_utils, common_utils
+from pcdet.datasets.dataset import DatasetTemplate
 
 
 class CustomDataset(DatasetTemplate):
-    def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
+    def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None, split='train'):
         """
         Args:
             root_path:
@@ -22,29 +25,61 @@ class CustomDataset(DatasetTemplate):
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
-        self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
-
-        split_dir = os.path.join(self.root_path, 'ImageSets', (self.split + '.txt'))
-        self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if os.path.exists(split_dir) else None
-
+        # self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
+        self.split = split
+        self.fill_sample_id_list()
         self.custom_infos = []
         self.include_data(self.mode)
         self.map_class_to_kitti = self.dataset_cfg.MAP_CLASS_TO_KITTI
+        
+    def fill_sample_id_list(self):
+        self.sample_id_list = []
+        template = os.path.join(self.root_path, 'ImageSets', "%.txt")
+        for split_path in self.get_split_aug_names(template):
+            if not os.path.exists(split_path):
+                continue
+            self.sample_id_list.extend([x.strip() for x in open(split_path).readlines()])
+        if len(self.sample_id_list) == 0:
+            self.sample_id_list = None
+        else:
+            self.sample_id_list.sort()
+    
+    def get_split_aug_names(self, path_template: str):
+        def make_path(name):
+            return path_template.replace("%", name)
+            # return os.path.join(self.root_path, 'ImageSets', (name + '.txt'))
+        result = [make_path(self.split)]
+        if self.split == "test":
+            return result
+        if self.split == "val" and not self.dataset_cfg.CULS_AUGMENTS_VAL:
+            return result
+        for aug in self.dataset_cfg.CULS_AUGMENTS:
+            result.append(make_path(f"{self.split}_{aug}"))
+        return result
 
     def include_data(self, mode):
-        self.logger.info('Loading Custom dataset.')
+        # self.logger.info(f'Loading custom dataset, {self.split} split.')
+        template = os.path.join(self.root_path, "custom_infos_%.pkl")
+        info_paths = self.get_split_aug_names(template)
         custom_infos = []
-
-        for info_path in self.dataset_cfg.INFO_PATH[mode]:
-            info_path = self.root_path / info_path
-            if not info_path.exists():
+        for info_path in info_paths:
+            if not os.path.exists(info_path):
                 continue
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
                 custom_infos.extend(infos)
-
+        custom_infos = sorted(custom_infos, key=lambda d: d['point_cloud']['lidar_idx'])
         self.custom_infos.extend(custom_infos)
-        self.logger.info('Total samples for CUSTOM dataset: %d' % (len(custom_infos)))
+        self.logger.info(
+            "Loaded split " +
+            self.split.ljust(5, ' ') +
+            " with " +
+            str(len(custom_infos)).rjust(4, ' ') +
+            " samples and " +
+            (str(len(info_paths)-1).rjust(2, ' ') if len(info_paths) > 1 else "no") +
+            " augmentations."
+        )
+        # self.logger.info(f'Total samples: {len(custom_infos)} ({len(info_paths)-1} augmentations)')
 
     def get_label(self, idx):
         label_file = self.root_path / 'labels' / ('%s.txt' % idx)
