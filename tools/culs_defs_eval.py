@@ -21,13 +21,7 @@ def evaluate_model_scores_per_sample(cfg, model, dataloader):
     metrics = {}
     model.eval()
     cfg.MODEL.POST_PROCESSING.SCORE_THRESH = 0.0
-    if cfg.MODEL.NAME in ["SECONDNet", "PillarNet"]:
-        ground_truths, predictions, losses = get_data_and_loss(model, dataloader)
-    elif cfg.MODEL.NAME == "PointRCNN":
-        ground_truths, predictions, losses = get_point_data_and_loss(model, dataloader)
-    else:
-        raise Exception(
-            "Can get loss results only for SECONDNet and PointRCNN models. If that's okay, use the get_data_only() function.")
+    ground_truths, predictions, = get_predictions_only(model, dataloader)
     scores = [x / 100.0 for x in range(1, 100, 1)]
     metrics.update(
         get_detection_metrics_per_sample(
@@ -273,6 +267,15 @@ def pairwise_correlation(A, B):
             np.sqrt(np.sum(bm**2, axis=0, keepdims=True))
         )
     )[0]
+
+
+def get_predictions_only(model, dataloader):
+    ground_truths, predictions = [], []
+    for i, sample_gt in enumerate(dataloader):
+        sample_pred = make_prediction(model, sample_gt, dataloader.dataset)
+        ground_truths.append(sample_gt)
+        predictions.append(sample_pred[0])
+    return ground_truths, predictions
 
 
 def get_data_and_loss(model, dataloader):
