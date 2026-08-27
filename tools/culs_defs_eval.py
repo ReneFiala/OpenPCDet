@@ -161,7 +161,7 @@ def get_detection_metrics(ground_truths, predictions, confidence_thresholds, iou
         for typ in ['sum', 'avg']:
             cf_t = result[f"fscore_{typ}_{iou_t}_score"]
             for pr in ['precis', 'recall']:
-                    result[f"{pr}_{typ}_{iou_t}"] = result["detection_per_cf"][cf_t][f"{pr}_{typ}_{iou_t}"]
+                result[f"{pr}_{typ}_{iou_t}"] = result["detection_per_cf"][cf_t][f"{pr}_{typ}_{iou_t}"]
             ap = 0
             cf_len = len(confidence_thresholds)
             det_dict = result['detection_per_cf']
