@@ -37,7 +37,6 @@ def main(args):
         culs_loading.load_trial_params(study, cfg)
     
     data = culs_loading.create_loaders(cfg, logger, "test")
-    model = culs_loading.build_model(cfg, data)
     model = build_model(cfg, args, data.set)
     predictions, metrics = culs_eval.evaluate_model_scores(cfg, model, data.loader)
     if args.out is not None:
