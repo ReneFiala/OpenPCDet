@@ -17,6 +17,26 @@ def evaluate_model_loss(cfg, model, dataloader, pr_curve=False):
     return predictions, {'loss': loss}
 
 
+def evaluate_model_scores_per_sample(cfg, model, dataloader):
+    metrics = {}
+    model.eval()
+    cfg.MODEL.POST_PROCESSING.SCORE_THRESH = 0.0
+    if cfg.MODEL.NAME in ["SECONDNet", "PillarNet"]:
+        ground_truths, predictions, losses = get_data_and_loss(model, dataloader)
+    elif cfg.MODEL.NAME == "PointRCNN":
+        ground_truths, predictions, losses = get_point_data_and_loss(model, dataloader)
+    else:
+        raise Exception(
+            "Can get loss results only for SECONDNet and PointRCNN models. If that's okay, use the get_data_only() function.")
+    scores = [x / 100.0 for x in range(1, 100, 1)]
+    metrics.update(
+        get_detection_metrics_per_sample(
+            ground_truths, predictions, scores, cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
+        )
+    )
+    return predictions, metrics
+
+
 def evaluate_model_scores(cfg, model, dataloader):
     tick_1 = time.perf_counter()
     metrics = {}
@@ -41,6 +61,13 @@ def evaluate_model_scores(cfg, model, dataloader):
     
     tick_3 = time.perf_counter()
     metrics.update(
+        {
+            "per_sample": get_detection_metrics_per_sample(
+                ground_truths, predictions, scores, cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
+            )
+        }
+    )
+    metrics.update(
         get_detection_metrics(
             ground_truths, predictions, scores, cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST
         )
@@ -49,6 +76,42 @@ def evaluate_model_scores(cfg, model, dataloader):
     metrics['eval_time'] = tick_4 - tick_1
     # print(f"P/C/D/T: {tick_2 - tick_1:.2f} + {tick_3 - tick_2:.2f} + {tick_4 - tick_3:.2f} = {tick_4 - tick_1:.2f}")
     return predictions, metrics
+
+
+def get_detection_metrics_per_sample(ground_truths, predictions, confidence_thresholds, iou_thresholds):
+    result = {}
+    cf = [np.array(x['score']) for x in predictions]
+    iou = get_raw_iou(ground_truths, predictions, confidence_thresholds[0])
+    iou = [np.array(x) for x in iou]
+    for pred, iou_s, cf_s in zip(predictions, iou, cf):
+        sample_result = {}
+        for iou_t in iou_thresholds:
+            all_p, all_r, all_f = [], [], []
+            for cf_t in confidence_thresholds:
+                iou_s_t, cf_s_t = drop_low_confidences_detection_in_sample(iou_s, cf_s, cf_t)
+                tp, fp, fn = iou_to_truths(iou_s_t, iou_t)
+                p, r, f = get_pr_and_score(tp, fp, fn)
+                all_p.append(p)
+                all_r.append(r)
+                all_f.append(f)
+            ap = 0
+            cf_len = len(confidence_thresholds)
+            for i in range(cf_len):
+                ri = all_r[i]
+                rj = all_r[i + 1] if (i != cf_len - 1) else 0.0
+                pi = all_p[i]
+                ap += (ri - rj) * pi
+            sample_result[f"ap_{iou_t}"] = ap
+            sample_result[f"fscore_{iou_t}"] = max(all_f)
+        result[pred["frame_id"]] = sample_result
+    return result
+
+
+def drop_low_confidences_detection_in_sample(iou, scores, threshold):
+    newlen = len([x for x in scores if x >= threshold])
+    scores = scores[:newlen]
+    iou = iou[:,:newlen]
+    return iou, scores
 
 
 def get_detection_metrics(ground_truths, predictions, confidence_thresholds, iou_thresholds):
