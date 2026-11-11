@@ -6,7 +6,7 @@ from pcdet.models import build_network
 from pathlib import Path
 from easydict import EasyDict
 
-HARDCODED = True
+HARDCODED = False
 args = EasyDict({
     "cfg": "./cfgs/base_second_mdl.yaml",
     "checkpoint_root": "./results/2026-07-01_grouped_second/ci-3b",
@@ -43,7 +43,7 @@ def main(args):
                 continue
             cv_result = get_results_for_cv(cfg, logger, args, t, v)
             results[f"t{t}-v{v}"] = cv_result
-    with open(Path(args.out) / "metrics.pkl", 'wb') as f:
+    with open(Path(args.out) / f"{args.method}.pkl", 'wb') as f:
         pickle.dump(results, f)
 
 
@@ -77,12 +77,12 @@ def print_two_metrics(a, b):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('cfg', type=str)
-    parser.add_argument('method', type=str)
-    parser.add_argument('checkpoint_root', type=str)
-    parser.add_argument('checkpoint_name', type=str)
-    parser.add_argument('data_root', type=str)
-    parser.add_argument('out', type=str)
+    parser.add_argument('--cfg', type=str)
+    parser.add_argument('--method', type=str)
+    parser.add_argument('--checkpoint-root', type=str)
+    parser.add_argument('--checkpoint-name', type=str)
+    parser.add_argument('--data-root', type=str)
+    parser.add_argument('--out', type=str)
     return parser.parse_args()
 
 def intro_print(args, logger):
