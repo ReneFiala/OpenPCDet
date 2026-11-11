@@ -26,7 +26,9 @@ class CustomDataset(DatasetTemplate):
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
         # self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
-        self.split = split
+        if isinstance(split, str):
+            split = [split]
+        self.splits = split
         self.fill_sample_id_list()
         self.custom_infos = []
         self.include_data(self.mode)
@@ -47,15 +49,19 @@ class CustomDataset(DatasetTemplate):
     def get_split_aug_names(self, path_template: str):
         def make_path(name):
             return path_template.replace("%", name)
-            # return os.path.join(self.root_path, 'ImageSets', (name + '.txt'))
-        result = [make_path(self.split)]
-        if self.split == "test":
+        def handle_split(s):
+            result = [make_path(s)]
+            if s == "test":
+                return result
+            if s == "val" and not self.dataset_cfg.CULS_AUGMENTS_VAL:
+                return result
+            for aug in self.dataset_cfg.CULS_AUGMENTS:
+                result.append(make_path(f"{s}_{aug}"))
             return result
-        if self.split == "val" and not self.dataset_cfg.CULS_AUGMENTS_VAL:
-            return result
-        for aug in self.dataset_cfg.CULS_AUGMENTS:
-            result.append(make_path(f"{self.split}_{aug}"))
-        return result
+        final_result = []
+        for s in self.splits:
+            final_result.extend(handle_split(s))
+        return final_result
 
     def include_data(self, mode):
         # self.logger.info(f'Loading custom dataset, {self.split} split.')
@@ -70,13 +76,15 @@ class CustomDataset(DatasetTemplate):
                 custom_infos.extend(infos)
         custom_infos = sorted(custom_infos, key=lambda d: d['point_cloud']['lidar_idx'])
         self.custom_infos.extend(custom_infos)
+        split_names = "+".join(self.splits)
+        num_augs = len(self.dataset_cfg.CULS_AUGMENTS)
         self.logger.info(
             "Loaded split " +
-            self.split.ljust(5, ' ') +
+            split_names.ljust(10, ' ') +
             " with " +
             str(len(custom_infos)).rjust(4, ' ') +
             " samples and " +
-            (str(len(info_paths)-1).rjust(2, ' ') if len(info_paths) > 1 else "no") +
+            (str(num_augs).rjust(2, ' ') if num_augs > 1 else "no") +
             " augmentations."
         )
         # self.logger.info(f'Total samples: {len(custom_infos)} ({len(info_paths)-1} augmentations)')
@@ -108,10 +116,14 @@ class CustomDataset(DatasetTemplate):
             dataset_cfg=self.dataset_cfg, class_names=self.class_names, training=self.training,
             root_path=self.root_path, logger=self.logger
         )
-        self.split = split
-
-        split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
-        self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
+        self.splits = [split]
+        self.sample_id_list = []
+        for s in self.splits:
+            split_dir = self.root_path / 'ImageSets' / (s + '.txt')
+            if not split_dir.exists():
+                self.logger.warning(f"Split {s} doesn't exist.")
+                continue
+            self.sample_id_list.extend([x.strip() for x in open(split_dir).readlines()])
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:
@@ -178,7 +190,7 @@ class CustomDataset(DatasetTemplate):
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
         infos = []
         for sample_idx in sample_id_list:
-            print('%s sample_idx: %s' % (self.split, sample_idx))
+            print('%s sample_idx: %s' % (self.splits, sample_idx))
             info = {}
             pc_info = {'num_features': num_features, 'lidar_idx': sample_idx}
             info['point_cloud'] = pc_info
