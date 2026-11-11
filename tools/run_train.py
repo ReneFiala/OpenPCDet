@@ -10,7 +10,20 @@ import scipy.stats
 import pcdet.config
 import torch, numpy, random
 
-def main(cfg_path, data_path, epochs, out_path, es_patience, es_warmup, es_obj, batch_size, augs, aug_val, epochs_per_eval):
+def main(
+        cfg_path: str,
+        data_path: str,
+        epochs: int,
+        out_path: str,
+        es_patience: int,
+        es_warmup: int,
+        es_obj: list[str],
+        batch_size: int,
+        augs: list[str],
+        aug_val: bool,
+        epochs_per_eval: int,
+        refit: bool
+):
     culs_loading.ensure_determinism()
 
     # disable some warnings
@@ -32,8 +45,12 @@ def main(cfg_path, data_path, epochs, out_path, es_patience, es_warmup, es_obj, 
     logger = culs_loading.create_console_logger()
     
     # load dataset splits
-    train_data = culs_loading.create_loaders(cfg, logger, "train", epochs=epochs, batch_size=batch_size)
-    val_data = culs_loading.create_loaders(cfg, logger, "val", epochs=epochs)
+    if not refit:
+        train_data = culs_loading.create_loaders(cfg, logger, "train", epochs=epochs, batch_size=batch_size)
+        val_data = culs_loading.create_loaders(cfg, logger, "val", epochs=epochs)
+    else:
+        train_data = culs_loading.create_loaders(cfg, logger, ["train", "val"], epochs=epochs, batch_size=batch_size)
+        val_data = None
     test_data = culs_loading.create_loaders(cfg, logger, "test", epochs=epochs)
     
     # build the model
@@ -41,7 +58,7 @@ def main(cfg_path, data_path, epochs, out_path, es_patience, es_warmup, es_obj, 
     
     # create callbacks
     epoch_callbacks, end_callbacks = [], []
-    if es_patience > 0:
+    if es_patience > 0 and not refit:
         epoch_callbacks.append(
             callbacks.EarlyStopCallback(epochs, es_obj[0], es_obj[1], es_patience, es_warmup, out_path))
     epoch_callbacks.append(
@@ -63,12 +80,14 @@ def main(cfg_path, data_path, epochs, out_path, es_patience, es_warmup, es_obj, 
     pickle_cb = callbacks.PickleMetricsCallback(out_path)
     epoch_callbacks.append(pickle_cb)
     end_callbacks.append(pickle_cb)
+
+    val_eval_func = culs_eval.evaluate_model_scores if not refit else None
     
     # train the model
     result = culs_training.train_model(
         cfg, model, optimizer, lr_sched, lr_wu_sched, logger,
         train_data, val_data, test_data,
-        culs_eval.evaluate_model_scores, culs_eval.evaluate_model_scores, culs_eval.evaluate_model_scores,
+        culs_eval.evaluate_model_scores, val_eval_func, culs_eval.evaluate_model_scores,
         epoch_callbacks, end_callbacks, epochs_per_eval)
     return result
 
@@ -93,11 +112,13 @@ def parse_args():
                         help="Two strings: The metric name to check for, e.g. 'loss', and either 'min' or 'max' for its objective.")
     parser.add_argument("--batch-size", type=int, default=1, metavar="BZ")
     parser.add_argument("--augs", type=str, nargs="*", default="",
-                        help="List of augmentations to use.")
+                        help="List of augmentations to use. Override of config's DATA_CONFIG.CULS_AUGMENTS.")
     parser.add_argument("--aug-val", action='store_true',
-                        help="If set, use augmentations with the validation set as well.")
+                        help="If set, use augmentations with the validation set as well. Override of config's DATA_CONFIG.CULS_AUGMENTS_VAL.")
     parser.add_argument("--epochs-per-eval", type=int, default=1, metavar="EPOCHS",
                         help="Only make evaluations every n-th epoch.")
+    parser.add_argument("--refit", "-r", action='store_true',
+                        help="Combine train and val sets together into one train set. Validation evaluation and early stopping are ignored.")
     args = parser.parse_args()
     if len(args.es_objective) != 2:
         raise ValueError("--es-objective must have two values specified when used.")
@@ -118,4 +139,4 @@ if args.gpu >= 0:
         print(f"GPU ID {args.gpu} out of range {torch.cuda.device_count()}; rolling over to {gpu_id}.")
 else:
     print("Invalid GPU ID. Using 0.")
-main(args.config, args.dataset, args.epochs, args.output, args.es_patience, args.es_warmup, args.es_objective, args.batch_size, args.augs, args.aug_val, args.epochs_per_eval)
+main(args.config, args.dataset, args.epochs, args.output, args.es_patience, args.es_warmup, args.es_objective, args.batch_size, args.augs, args.aug_val, args.epochs_per_eval, args.refit)
