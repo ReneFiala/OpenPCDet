@@ -31,7 +31,7 @@ def main(args):
     if args.data is not None:
         cfg.DATA_CONFIG.DATA_PATH = args.data
     
-    if args.study:
+    if args.study is not None:
         with open(args.study, "rb") as fp:
             study = pickle.load(fp)
         culs_loading.load_trial_params(study, cfg)
