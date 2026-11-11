@@ -36,13 +36,14 @@ def evaluate_model_scores(cfg, model, dataloader):
     metrics = {}
     model.eval()
     cfg.MODEL.POST_PROCESSING.SCORE_THRESH = 0.0
-    if cfg.MODEL.NAME in ["SECONDNet", "PillarNet"]:
-        ground_truths, predictions, losses = get_data_and_loss(model, dataloader)
-    elif cfg.MODEL.NAME == "PointRCNN":
-        ground_truths, predictions, losses = get_point_data_and_loss(model, dataloader)
-    else:
-        raise Exception("Can get loss results only for SECONDNet and PointRCNN models. If that's okay, use the get_data_only() function.")
-    metrics.update(losses)
+    ground_truths, predictions, = get_predictions_only(model, dataloader)
+    # if cfg.MODEL.NAME in ["SECONDNet", "PillarNet"]:
+    #     ground_truths, predictions, losses = get_data_and_loss(model, dataloader)
+    # elif cfg.MODEL.NAME == "PointRCNN":
+    #     ground_truths, predictions, losses = get_point_data_and_loss(model, dataloader)
+    # else:
+    #     raise Exception("Can get loss results only for SECONDNet and PointRCNN models. If that's okay, use the get_data_only() function.")
+    # metrics.update(losses)
     tick_2 = time.perf_counter()
     
     scores = [x / 100.0 for x in range(1, 100, 1)]
